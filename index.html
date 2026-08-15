@@ -208,17 +208,34 @@
             playerSection.classList.add('active');
             playerSection.scrollIntoView({ behavior: 'smooth' });
             
-            updateStatus("🇸🇦 جاري تهيئة مشغل الوسائط والترجمة العربية المتوافقة...", "loading");
-            
-            // رابط المشغل الموحد مع تمرير المعرفات بشكل صحيح
-            const embedUrl = currentMetadata.imdbId 
-                ? `https://vidsrcme.ru/embed/${currentMetadata.type}/${currentMetadata.imdbId}`
-                : `https://vidsrcme.ru/embed/${currentMetadata.type}?tmdb=${currentMetadata.tmdbId}`;
+            updateStatus("🇸🇦 جاري جلب الترجمة العربية من OpenSubtitles وتهيئة المشغل...", "loading");
 
-            setTimeout(() => {
-                mediaPlayer.src = embedUrl;
-                updateStatus("✅ تم تحميل المشغل بنجاح", "success");
-            }, 1000);
+            if (currentMetadata.imdbId) {
+                const subtitleProxyUrl = `${window.location.origin}/.netlify/functions/get-arabic-sub?imdbId=${currentMetadata.imdbId}`;
+                
+                const params = new URLSearchParams({
+                    ds_lang: 'ar',                      
+                    sub_url: subtitleProxyUrl,          
+                    sub_label: 'العربية (مخصص)',         
+                    sub_lang: 'ar',                     
+                    autoplay: 1
+                });
+
+                const embedUrl = `https://vidsrcme.ru/embed/${currentMetadata.type}/${currentMetadata.imdbId}?${params.toString()}`;
+                
+                setTimeout(() => {
+                    mediaPlayer.src = embedUrl;
+                    updateStatus("✅ تم تفعيل المشغل مع الترجمة العربية بنجاح", "success");
+                }, 1000);
+
+            } else {
+                const embedUrl = `https://vidsrcme.ru/embed/${currentMetadata.type}?tmdb=${currentMetadata.tmdbId}&ds_lang=ar`;
+                
+                setTimeout(() => {
+                    mediaPlayer.src = embedUrl;
+                    updateStatus("✅ تم تحميل المشغل بالترجمة المتاحة", "success");
+                }, 1000);
+            }
         });
 
         document.getElementById('closePlayerBtn').addEventListener('click', () => {
