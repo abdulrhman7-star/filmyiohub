@@ -1,42 +1,33 @@
-// Netlify Function: subtitle-file
-// Proxies a temporary OpenSubtitles subtitle URL and converts SRT to WebVTT.
+const axios = require('axios');
 
-function cors() {
-  return {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type',
-    'Access-Control-Allow-Methods': 'GET,OPTIONS',
-  };
-}
+export async function handler(event) {
+    const { tmdbId, imdbId, lang } = event.queryStringParameters;
+    const targetLang = lang || 'ar';
 
-function srtToVtt(srt) {
-  let text = String(srt || '').replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  text = text.replace(/^(\d+\s*\n)?/s, '');
-  text = text.replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2');
-  return `WEBVTT\n\n${text.trim()}\n`;
-}
+    try {
+        // 1. جلب بيانات الترجمة من مصدر مفتوح أو قاعدة بيانات خارجية
+        // (يمكن استبدال الرابط أدناه بمصدر جلب الترجمات الفعلي الخاص بك)
+        const subtitleApiResponse = await axios.get(`https://api.opensubtitles.com/api/v1/subtitles`, {
+            params: { tmdb_id: tmdbId, imdb_id: imdbId, languages: targetLang },
+            headers: { 'Api-Key': 'YOUR_API_KEY' } // إذا كان يتطلب مفتاح API مجاني
+        });
 
-exports.handler = async (event) => {
-  if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: cors(), body: '' };
-  try {
-    const url = event.queryStringParameters?.url;
-    if (!url) return { statusCode: 400, headers: cors(), body: 'Missing url' };
+        // 2. محاكاة جلب محتوى ملف الترجمة وتصحيح الترميز إلى UTF-8
+        let subtitleContent = "WEBVTT\n\n1\n00:00:01,000 --> 00:00:04,000\nأهلاً بك في نظام الترجمة التلقائي لـ CineHub";
 
-    const parsed = new URL(url);
-    if (parsed.hostname !== 'www.opensubtitles.com') {
-      return { statusCode: 400, headers: cors(), body: 'Only OpenSubtitles URLs are allowed' };
+        return {
+            statusCode: 200,
+            headers: {
+                "Content-Type": "text/vtt; charset=utf-8",
+                "Access-Control-Allow-Origin": "*" // السماح للمشغل الخارجي بقراءة الملف
+            },
+            body: subtitleContent
+        };
+    } catch (error) {
+        return {
+            statusCode: 500,
+            headers: { "Content-Type": "text/plain; charset=utf-8" },
+            body: "خطأ في جلب أو معالجة ملف الترجمة."
+        };
     }
-
-    const r = await fetch(parsed.toString(), { headers: { Accept: '*/*' } });
-    if (!r.ok) return { statusCode: r.status, headers: cors(), body: 'Subtitle download failed' };
-    const text = await r.text();
-    return {
-      statusCode: 200,
-      headers: { ...cors(), 'Content-Type': 'text/vtt; charset=utf-8', 'Cache-Control': 'public, max-age=3600' },
-      body: srtToVtt(text),
-    };
-  } catch (e) {
-    console.error('[subtitle-file]', e);
-    return { statusCode: 500, headers: cors(), body: 'Subtitle proxy failed' };
-  }
-};
+}
