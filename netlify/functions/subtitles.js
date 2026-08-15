@@ -1,42 +1,132 @@
-// Netlify Function: subtitle-file
-// Proxies a temporary OpenSubtitles subtitle URL and converts SRT to WebVTT.
+export default async (request) => {
+    const url = new URL(request.url);
 
-function cors() {
-  return {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type',
-    'Access-Control-Allow-Methods': 'GET,OPTIONS',
-  };
-}
+    const subtitleUrl =
+        url.searchParams.get("url");
 
-function srtToVtt(srt) {
-  let text = String(srt || '').replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  text = text.replace(/^(\d+\s*\n)?/s, '');
-  text = text.replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2');
-  return `WEBVTT\n\n${text.trim()}\n`;
-}
-
-exports.handler = async (event) => {
-  if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: cors(), body: '' };
-  try {
-    const url = event.queryStringParameters?.url;
-    if (!url) return { statusCode: 400, headers: cors(), body: 'Missing url' };
-
-    const parsed = new URL(url);
-    if (parsed.hostname !== 'www.opensubtitles.com') {
-      return { statusCode: 400, headers: cors(), body: 'Only OpenSubtitles URLs are allowed' };
+    if (!subtitleUrl) {
+        return new Response(
+            JSON.stringify({
+                error: "Missing subtitle URL"
+            }),
+            {
+                status: 400,
+                headers: {
+                    "Content-Type":
+                        "application/json"
+                }
+            }
+        );
     }
 
-    const r = await fetch(parsed.toString(), { headers: { Accept: '*/*' } });
-    if (!r.ok) return { statusCode: r.status, headers: cors(), body: 'Subtitle download failed' };
-    const text = await r.text();
-    return {
-      statusCode: 200,
-      headers: { ...cors(), 'Content-Type': 'text/vtt; charset=utf-8', 'Cache-Control': 'public, max-age=3600' },
-      body: srtToVtt(text),
-    };
-  } catch (e) {
-    console.error('[subtitle-file]', e);
-    return { statusCode: 500, headers: cors(), body: 'Subtitle proxy failed' };
-  }
+    try {
+
+        /*
+         * اجلب ملف الترجمة
+         */
+
+        const response =
+            await fetch(subtitleUrl);
+
+        if (!response.ok) {
+            throw new Error(
+                `Subtitle HTTP ${response.status}`
+            );
+        }
+
+        /*
+         * نقرأ الملف كنص.
+         */
+
+        const text =
+            await response.text();
+
+        /*
+         * تحويل SRT إلى WebVTT
+         */
+
+        let vtt =
+            convertSrtToVtt(text);
+
+        /*
+         * ضمان UTF-8 وإزالة BOM
+         */
+
+        vtt =
+            vtt.replace(/^\uFEFF/, "");
+
+        /*
+         * نرسل الملف إلى المتصفح
+         */
+
+        return new Response(
+            vtt,
+            {
+                status: 200,
+
+                headers: {
+                    "Content-Type":
+                        "text/vtt; charset=utf-8",
+
+                    "Access-Control-Allow-Origin":
+                        "*",
+
+                    "Cache-Control":
+                        "public, max-age=300"
+                }
+            }
+        );
+
+    } catch (error) {
+
+        return new Response(
+            JSON.stringify({
+                error:
+                    error.message
+            }),
+            {
+                status: 500,
+
+                headers: {
+                    "Content-Type":
+                        "application/json"
+                }
+            }
+        );
+    }
 };
+
+
+/*
+============================================================
+ SRT → WEBVTT
+============================================================
+*/
+
+function convertSrtToVtt(srt) {
+
+    let result =
+        srt
+            .replace(/\r\n/g, "\n")
+            .replace(/\r/g, "\n")
+            .replace(
+                /(\d{2}):(\d{2}):(\d{2}),(\d{3})/g,
+                "$1:$2:$3.$4"
+            );
+
+    /*
+     * إزالة رقم أول subtitle
+     */
+
+    result =
+        result.replace(
+            /^\s*\d+\s*\n/,
+            ""
+        );
+
+    return (
+        "WEBVTT\n\n" +
+        result.trim() +
+        "\n"
+    );
+}
